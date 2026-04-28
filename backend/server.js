@@ -32,10 +32,23 @@ const app = express();
 // ── Security ───────────────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: [process.env.FRONTEND_URL || "https://decorlix-frontend.vercel.app/", "http://localhost:3000", "http://localhost:3001"],
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      process.env.FRONTEND_URL,
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://decorlix-frontend.vercel.app",
+    ];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
-  methods: ["GET","POST","PUT","DELETE","PATCH","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"],
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 200,
 }));
 
 // Raw body needed for Cashfree webhook signature verification
