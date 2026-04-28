@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🛍️ Decorlix — Full-Stack E-Commerce Website
 
 A production-ready e-commerce platform built with React.js, Node.js, MongoDB, Firebase OTP, Cashfree payments, and Tawk.to live chat.
