@@ -38,6 +38,7 @@ app.use(cors({
       "http://localhost:3000",
       "http://localhost:3001",
       "https://decorlix-frontend.vercel.app",
+      "https://www.decorlix.co.in",
     ];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
