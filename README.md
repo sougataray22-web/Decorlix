@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🛍️ Decorlix — Full-Stack E-Commerce Website
 
 A production-ready e-commerce platform built with React.js, Node.js, MongoDB, Firebase OTP, Cashfree payments, and Tawk.to live chat.
@@ -275,3 +276,7 @@ Password: Admin@12345
 
 - Live Chat: Tawk.to widget (bottom-right of site)
 - Email: support@decorlix.com
+=======
+# Decorlix
+full-stack e-commerce website
+>>>>>>> 0945caaa6b1f3d7d5cca309bcd20393430b811d5
