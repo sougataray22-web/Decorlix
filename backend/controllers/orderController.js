@@ -9,8 +9,8 @@ const calculatePricing = (items) => {
     return sum + unitPrice * item.quantity;
   }, 0);
   const shippingPrice = itemsPrice >= 999 ? 0 : 49;
-  const taxPrice      = 0;
-  const totalPrice    = Math.round((itemsPrice + shippingPrice + taxPrice) * 100) / 100;
+  const taxPrice = 0;
+  const totalPrice = Math.round((itemsPrice + shippingPrice + taxPrice) * 100) / 100;
   return { itemsPrice, shippingPrice, taxPrice, totalPrice };
 };
 
