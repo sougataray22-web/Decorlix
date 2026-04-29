@@ -34,12 +34,13 @@ app.use(helmet());
 app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
+      "https://decorlix-frontend.vercel.app",
+      "https://www.decorlix.co.in",
+      "https://decorlix.co.in",
       process.env.FRONTEND_URL,
       "http://localhost:3000",
       "http://localhost:3001",
-      "https://decorlix-frontend.vercel.app",
-      "https://www.decorlix.co.in",
-    ];
+       ];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
