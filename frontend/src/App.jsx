@@ -1,6 +1,7 @@
 // frontend/src/App.jsx
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import { AuthProvider } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import { ProtectedRoute, AdminRoute } from "./components/ProtectedRoute";
@@ -37,6 +38,7 @@ function App() {
         <CartProvider>
           <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
           <TawkToChat />
+          <SpeedInsights />
 
           <Routes>
             {/* ── Public ─────────────────────────────────────────────────── */}
