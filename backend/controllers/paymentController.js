@@ -9,41 +9,38 @@ const CASHFREE_URL = process.env.CASHFREE_ENV === "TEST"
   ? "https://sandbox.cashfree.com/pg"
   : "https://api.cashfree.com/pg";
 
-const generateOrderId = () => `ORD_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-const getSignature = (data, secretKey) => {
-  const message = `${data.orderId}.${data.orderAmount}.${data.orderCurrency}`;
-  return crypto.createHmac("sha256", secretKey).update(message).digest("base64");
-};
-
 const initiatePayment = asyncHandler(async (req, res) => {
   const { orderId, amount, customerEmail, customerPhone, returnUrl } = req.body;
+
+  console.log("Payment Initiate Request:", { orderId, amount, customerEmail, customerPhone });
 
   if (!orderId || !amount || !customerEmail || !customerPhone) {
     res.status(400);
     throw new Error("Missing required fields: orderId, amount, customerEmail, customerPhone.");
   }
 
-  if (amount < 1) {
+  if (parseFloat(amount) < 1) {
     res.status(400);
     throw new Error("Amount must be at least ₹1.");
   }
 
   try {
     const orderPayload = {
-      order_id: orderId,
+      order_id: orderId.toString(),
       order_amount: parseFloat(amount).toFixed(2),
       order_currency: "INR",
       customer_details: {
         customer_id: req.user._id.toString(),
-        customer_email: customerEmail,
-        customer_phone: customerPhone,
+        customer_email: customerEmail.trim(),
+        customer_phone: customerPhone.toString(),
       },
       order_meta: {
         return_url: returnUrl || `${process.env.FRONTEND_URL}/payment/verify`,
       },
       order_note: "Decorlix Order Payment",
     };
+
+    console.log("Cashfree Payload:", JSON.stringify(orderPayload, null, 2));
 
     const headers = {
       "x-api-version": "2023-08-01",
@@ -54,9 +51,11 @@ const initiatePayment = asyncHandler(async (req, res) => {
 
     const response = await axios.post(`${CASHFREE_URL}/orders`, orderPayload, { headers });
 
-    if (response.status !== 200) {
+    console.log("Cashfree Response:", response.data);
+
+    if (!response.data || !response.data.payment_session_id) {
       res.status(400);
-      throw new Error("Failed to create Cashfree order.");
+      throw new Error("Invalid response from Cashfree.");
     }
 
     const { order_id, payment_session_id } = response.data;
@@ -75,21 +74,26 @@ const initiatePayment = asyncHandler(async (req, res) => {
       message: "Payment session created.",
       orderId: order_id,
       paymentSessionId: payment_session_id,
-      redirectUrl: `${CASHFREE_URL}/orders/${order_id}?key=${process.env.CASHFREE_APP_ID}`,
+      redirectUrl: `${CASHFREE_URL}/checkout/?sessionId=${payment_session_id}`,
     });
   } catch (err) {
-    console.error("Payment Initiation Error:", err.response?.data || err.message);
+    console.error("Cashfree Error Details:", {
+      status: err.response?.status,
+      data: err.response?.data,
+      message: err.message,
+    });
+
     res.status(err.response?.status || 500);
-    throw new Error(err.response?.data?.message || "Payment initiation failed.");
+    throw new Error(err.response?.data?.message || err.message || "Payment initiation failed.");
   }
 });
 
 const verifyPayment = asyncHandler(async (req, res) => {
   const { orderId, paymentSessionId } = req.body;
 
-  if (!orderId || !paymentSessionId) {
+  if (!orderId) {
     res.status(400);
-    throw new Error("orderId and paymentSessionId are required.");
+    throw new Error("orderId is required.");
   }
 
   try {
@@ -110,7 +114,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
     }
 
     const payment = response.data[0];
-    const { cf_payment_id, payment_status, order_id } = payment;
+    const { payment_status, cf_payment_id } = payment;
 
     if (payment_status === "SUCCESS") {
       const order = await Order.findByIdAndUpdate(
@@ -118,42 +122,30 @@ const verifyPayment = asyncHandler(async (req, res) => {
         { 
           paymentStatus: "completed",
           paymentId: cf_payment_id,
-          transactionId: cf_payment_id,
         },
         { new: true }
       ).populate("items.product");
 
-      await Transaction.updateOne(
-        { sessionId: paymentSessionId },
-        { 
-          status: "success", 
-          paymentId: cf_payment_id,
-          verifiedAt: new Date(),
-        }
-      );
+      if (paymentSessionId) {
+        await Transaction.updateOne(
+          { sessionId: paymentSessionId },
+          { status: "success", paymentId: cf_payment_id }
+        );
+      }
 
       return res.status(200).json({
         success: true,
         message: "Payment verified successfully.",
         order,
-        paymentStatus: "success",
       });
-    } else if (payment_status === "FAILED" || payment_status === "CANCELLED") {
-      await Transaction.updateOne(
-        { sessionId: paymentSessionId },
-        { status: "failed" }
-      );
-
-      res.status(400);
-      throw new Error(`Payment ${payment_status.toLowerCase()}.`);
     } else {
       res.status(400);
-      throw new Error("Payment is still pending or in processing.");
+      throw new Error(`Payment ${payment_status.toLowerCase()}.`);
     }
   } catch (err) {
     console.error("Payment Verification Error:", err.message);
     res.status(err.response?.status || 500);
-    throw new Error(err.response?.data?.message || "Payment verification failed.");
+    throw new Error("Payment verification failed.");
   }
 });
 
@@ -170,14 +162,7 @@ const getTransaction = asyncHandler(async (req, res) => {
     throw new Error("Transaction not found.");
   }
 
-  res.status(200).json({ 
-    success: true, 
-    transaction 
-  });
+  res.status(200).json({ success: true, transaction });
 });
 
-module.exports = { 
-  initiatePayment, 
-  verifyPayment, 
-  getTransaction 
-};
+module.exports = { initiatePayment, verifyPayment, getTransaction };
