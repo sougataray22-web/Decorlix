@@ -42,7 +42,7 @@ const orderSchema = new mongoose.Schema(
     totalPrice:     { type: Number, required: true, default: 0 },
     paymentMethod: {
       type: String,
-      enum: ["cashfree","cod","upi","card","online","netbanking","wallet"],
+      enum: ["cashfree","cod","upi","card","netbanking","wallet"],
       required: true,
     },
     paymentStatus: {
