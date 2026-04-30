@@ -42,8 +42,8 @@ export default function CheckoutPage() {
 
   const calculateTotals = () => {
     const itemsPrice = cart?.itemsPrice || 0;
-    const shipping = itemsPrice >= 499 ? 0 : 49;
-    const tax = 0;
+    const shipping = itemsPrice >= 999 ? 0 : 99;
+    const tax = Math.round(itemsPrice * 0.18 * 100) / 100;
     const total = itemsPrice + shipping + tax;
     return { itemsPrice, shipping, tax, total };
   };
@@ -87,31 +87,35 @@ export default function CheckoutPage() {
 
     setPaymentLoading(true);
     try {
-      const orderId = `ORD_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const amount = parseFloat(total).toFixed(2);
-
-      if (parseFloat(amount) < 1) {
-        toast.error("Invalid amount");
-        setPaymentLoading(false);
-        return;
-      }
-
-      const { data } = await api.post("/payments/initiate", {
-        orderId,
-        amount,
-        customerEmail: user?.email || "user@decorlix.com",
-        customerPhone: shippingAddress.phone,
-        returnUrl: `${window.location.origin}/payment/verify`,
+      const orderResponse = await api.post("/orders", {
+        items: cart.items,
+        shippingAddress,
+        paymentMethod: "online",
+        itemsPrice,
+        shippingPrice: shipping,
+        taxPrice: tax,
+        totalPrice: total,
       });
 
-      if (data.success && data.redirectUrl) {
-        window.location.href = data.redirectUrl;
+      const createdOrder = orderResponse.data.order;
+      const orderId = createdOrder._id;
+
+      const paymentResponse = await api.post("/payments/initiate", {
+        orderId,
+        amount: parseFloat(total).toFixed(2),
+        customerEmail: user?.email || "user@decorlix.com",
+        customerPhone: shippingAddress.phone,
+        returnUrl: `${window.location.origin}/payment/verify?orderId=${orderId}`,
+      });
+
+      if (paymentResponse.data.success && paymentResponse.data.redirectUrl) {
+        window.location.href = paymentResponse.data.redirectUrl;
       } else {
-        toast.error(data.message || "Payment initialization failed");
+        toast.error(paymentResponse.data.message || "Payment initialization failed");
       }
     } catch (error) {
       console.error("Payment Error:", error.response?.data || error.message);
-      toast.error(error.response?.data?.message || "Payment initiation failed");
+      toast.error(error.response?.data?.message || "Payment failed");
     } finally {
       setPaymentLoading(false);
     }
@@ -125,12 +129,10 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-gray-50 py-10">
       <div className="max-w-5xl mx-auto px-4 grid md:grid-cols-3 gap-8">
 
-        {/* Shipping & Payment */}
         <div className="md:col-span-2 bg-white rounded-2xl p-6 shadow">
           <h2 className="text-2xl font-bold mb-6">Checkout</h2>
 
-          {/* Shipping Address */}
-          <form onSubmit={handleCODOrder}>
+          <form onSubmit={paymentMethod === "online" ? handlePayment : handleCODOrder}>
             <h3 className="text-lg font-bold mb-4">Shipping Address</h3>
             <div className="grid grid-cols-2 gap-4 mb-6">
               <input type="text" name="fullName" value={shippingAddress.fullName} onChange={handleAddressChange}
@@ -149,7 +151,6 @@ export default function CheckoutPage() {
                 placeholder="Pincode *" className="col-span-2 border rounded-lg px-4 py-2 focus:outline-none focus:border-primary" required />
             </div>
 
-            {/* Payment Method */}
             <h3 className="text-lg font-bold mb-4">Payment Method</h3>
             <div className="space-y-3 mb-6">
               <label className="flex items-center border rounded-lg p-3 cursor-pointer hover:bg-gray-50">
@@ -163,7 +164,7 @@ export default function CheckoutPage() {
             </div>
 
             {paymentMethod === "online" ? (
-              <button type="button" onClick={handlePayment} disabled={paymentLoading}
+              <button type="submit" disabled={paymentLoading}
                 className="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition disabled:opacity-60">
                 {paymentLoading ? "Processing..." : `Pay ₹${total.toFixed(2)}`}
               </button>
@@ -176,7 +177,6 @@ export default function CheckoutPage() {
           </form>
         </div>
 
-        {/* Order Summary */}
         <div className="bg-white rounded-2xl p-6 shadow h-fit">
           <h3 className="text-lg font-bold mb-4">Order Summary</h3>
           <div className="space-y-3 border-b pb-4 mb-4">
