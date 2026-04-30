@@ -29,8 +29,8 @@ export default function CheckoutPage() {
 
   const items      = cart?.items || [];
   const itemsPrice = cart?.itemsPrice || 0;
-  const shipping   = itemsPrice >= 999 ? 0 : 99;
-  const tax        = Math.round(itemsPrice * 0.18 * 100) / 100;
+  const shipping   = itemsPrice >= 499 ? 0 : 49;
+  const tax        = 0; 
   const total      = itemsPrice + shipping + tax;
 
   const handleChange = (e) => setAddress({ ...address, [e.target.name]: e.target.value });

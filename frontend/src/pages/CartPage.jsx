@@ -15,8 +15,8 @@ export default function CartPage() {
 
   const items      = cart?.items || [];
   const itemsPrice = cart?.itemsPrice || 0;
-  const shipping   = itemsPrice >= 999 ? 0 : 99;
-  const tax        = Math.round(itemsPrice * 0.18 * 100) / 100;
+  const shipping   = itemsPrice >= 499 ? 0 : 49;
+  const tax        = 0;
   const total      = itemsPrice + shipping + tax;
 
   if (items.length === 0) return (
@@ -99,7 +99,7 @@ export default function CartPage() {
               </div>
               {shipping > 0 && (
                 <p className="text-xs text-green-600 bg-green-50 p-2 rounded">
-                  Add ₹{(999 - itemsPrice).toFixed(0)} more for free shipping!
+                  Add ₹{(499 - itemsPrice).toFixed(0)} more for free shipping!
                 </p>
               )}
               <hr />
