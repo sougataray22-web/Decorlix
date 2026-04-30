@@ -35,14 +35,16 @@ export default function LoginPage() {
   // ── Phone OTP ────────────────────────────────────────────────────────────
 const setupRecaptcha = () => {
   if (window.recaptchaVerifier) return;
-
-  window.recaptchaVerifier = new RecaptchaVerifier(
-    "recaptcha-container",
-    {
+  try {
+    window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
       size: "invisible",
-    },
-    auth
-  );
+      callback: (response) => {
+        console.log("reCAPTCHA resolved:", response);
+      },
+    });
+  } catch (error) {
+    console.error("RecaptchaVerifier error:", error);
+  }
 };
 
   async function sendOTP(e) {
