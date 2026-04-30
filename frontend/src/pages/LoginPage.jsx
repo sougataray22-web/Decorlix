@@ -25,6 +25,10 @@ export default function LoginPage() {
     try {
       const { data } = await api.post("/auth/login", { email: form.email, password: form.password });
       login(data.user, data.token);
+      localStorage.setItem("userInfo", JSON.stringify({
+      ...data.user,
+      token: data.token
+     }))
       toast.success("Welcome back!");
       navigate("/");
     } catch (err) {
@@ -72,6 +76,10 @@ const setupRecaptcha = () => {
       const idToken = await result.user.getIdToken();
       const { data } = await api.post("/auth/firebase-login", { idToken, name: form.name || undefined });
       login(data.user, data.token);
+      localStorage.setItem("userInfo", JSON.stringify({
+      ...data.user,
+      token: data.token
+     }))
       toast.success("Login successful!");
       navigate("/");
     } catch (err) {
