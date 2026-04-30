@@ -1,170 +1,202 @@
 // frontend/src/pages/CheckoutPage.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import { useCart } from "../context/CartContext";
 import api from "../services/api";
 import toast from "react-hot-toast";
-import { load } from "@cashfreepayments/cashfree-js";
-
-const FIELDS = [
-  { name:"fullName",     label:"Full Name *",       type:"text" },
-  { name:"phone",        label:"Phone Number *",    type:"tel"  },
-  { name:"addressLine1", label:"Address Line 1 *",  type:"text" },
-  { name:"addressLine2", label:"Address Line 2",    type:"text" },
-  { name:"city",         label:"City *",            type:"text" },
-  { name:"state",        label:"State *",           type:"text" },
-  { name:"pincode",      label:"Pincode *",         type:"text" },
-];
 
 export default function CheckoutPage() {
-  const { cart }   = useCart();
-  const { user }   = useAuth();
-  const navigate   = useNavigate();
-  const [loading,       setLoading]       = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("cashfree");
-  const [address, setAddress] = useState({
-    fullName:"", phone: user?.phone || "", addressLine1:"", addressLine2:"", city:"", state:"", pincode:"",
+  const { user } = useAuth();
+  const { cart } = useCart();
+  const navigate = useNavigate();
+
+  const [loading, setLoading] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [shippingAddress, setShippingAddress] = useState({
+    fullName: user?.name || "",
+    phone: user?.phone || "",
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    state: "",
+    pincode: "",
   });
+  const [paymentMethod, setPaymentMethod] = useState("online");
 
-  const items      = cart?.items || [];
-  const itemsPrice = cart?.itemsPrice || 0;
-  const shipping   = itemsPrice >= 499 ? 0 : 49;
-  const tax        = 0; 
-  const total      = itemsPrice + shipping + tax;
+  useEffect(() => {
+    if (!user) {
+      toast.error("Please login first");
+      navigate("/login");
+    }
+    if (!cart?.items || cart.items.length === 0) {
+      toast.error("Your cart is empty");
+      navigate("/cart");
+    }
+  }, [user, cart, navigate]);
 
-  const handleChange = (e) => setAddress({ ...address, [e.target.name]: e.target.value });
+  const handleAddressChange = (e) => {
+    const { name, value } = e.target;
+    setShippingAddress({ ...shippingAddress, [name]: value });
+  };
 
-  const handlePlaceOrder = async (e) => {
+  const calculateTotals = () => {
+    const itemsPrice = cart?.itemsPrice || 0;
+    const shipping = itemsPrice >= 499 ? 0 : 49;
+    const tax = 0;
+    const total = itemsPrice + shipping + tax;
+    return { itemsPrice, shipping, tax, total };
+  };
+
+  const { itemsPrice, shipping, tax, total } = calculateTotals();
+
+  const handleCODOrder = async (e) => {
     e.preventDefault();
-    const { fullName, phone, addressLine1, city, state, pincode } = address;
-    if (!fullName || !phone || !addressLine1 || !city || !state || !pincode)
-      return toast.error("Please fill all required address fields.");
-    if (items.length === 0) return toast.error("Your cart is empty.");
+    if (!shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.addressLine1) {
+      toast.error("Please fill all required fields");
+      return;
+    }
 
     setLoading(true);
     try {
-      const orderItems = items.map((item) => ({
-        product:  item.product?._id || item.product,
-        quantity: item.quantity,
-      }));
-
-      const { data: orderData } = await api.post("/orders", { items: orderItems, shippingAddress: address, paymentMethod });
-      const orderId = orderData.order._id;
-
-      if (paymentMethod === "cod") {
-        toast.success("Order placed successfully!");
-        navigate(`/orders/${orderId}`);
-        return;
-      }
-
-      const { data: payData } = await api.post("/payments/initiate", { orderId });
-
-      const cashfree = await load({
-        mode: process.env.REACT_APP_CASHFREE_ENV === "PROD" ? "production" : "sandbox",
+      const { data } = await api.post("/orders", {
+        items: cart.items,
+        shippingAddress,
+        paymentMethod: "cod",
+        itemsPrice,
+        shippingPrice: shipping,
+        taxPrice: tax,
+        totalPrice: total,
       });
 
-      cashfree.checkout({
-        paymentSessionId: payData.paymentSessionId,
-        returnUrl: `${window.location.origin}/payment/verify?orderId=${orderId}&cashfreeOrderId=${payData.cashfreeOrderId}`,
-      });
+      toast.success("Order placed successfully!");
+      navigate(`/orders/${data.order._id}`);
     } catch (err) {
-      toast.error(err.response?.data?.message || "Failed to place order.");
+      toast.error(err.response?.data?.message || "Order failed");
     } finally {
       setLoading(false);
     }
   };
 
+  const handlePayment = async (e) => {
+    e.preventDefault();
+    if (!shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.addressLine1) {
+      toast.error("Please fill all required fields");
+      return;
+    }
+
+    setPaymentLoading(true);
+    try {
+      const orderId = `ORD_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const amount = parseFloat(total).toFixed(2);
+
+      if (parseFloat(amount) < 1) {
+        toast.error("Invalid amount");
+        setPaymentLoading(false);
+        return;
+      }
+
+      const { data } = await api.post("/payments/initiate", {
+        orderId,
+        amount,
+        customerEmail: user?.email || "user@decorlix.com",
+        customerPhone: shippingAddress.phone,
+        returnUrl: `${window.location.origin}/payment/verify`,
+      });
+
+      if (data.success && data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      } else {
+        toast.error(data.message || "Payment initialization failed");
+      }
+    } catch (error) {
+      console.error("Payment Error:", error.response?.data || error.message);
+      toast.error(error.response?.data?.message || "Payment initiation failed");
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  if (!cart || !cart.items || cart.items.length === 0) {
+    return <div className="text-center py-20">Loading...</div>;
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Checkout</h1>
-        <form onSubmit={handlePlaceOrder}>
-          <div className="grid md:grid-cols-2 gap-6">
+    <div className="min-h-screen bg-gray-50 py-10">
+      <div className="max-w-5xl mx-auto px-4 grid md:grid-cols-3 gap-8">
 
-            {/* Left: Address + Payment */}
-            <div className="space-y-4">
-              <div className="bg-white rounded-xl p-6 border shadow-sm">
-                <h2 className="font-bold text-gray-800 mb-4">Shipping Address</h2>
-                <div className="space-y-3">
-                  {FIELDS.map(({ name, label, type }) => (
-                    <div key={name}>
-                      <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
-                      <input
-                        type={type} name={name} value={address[name]} onChange={handleChange}
-                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
+        {/* Shipping & Payment */}
+        <div className="md:col-span-2 bg-white rounded-2xl p-6 shadow">
+          <h2 className="text-2xl font-bold mb-6">Checkout</h2>
 
-              <div className="bg-white rounded-xl p-6 border shadow-sm">
-                <h2 className="font-bold text-gray-800 mb-4">Payment Method</h2>
-                <div className="space-y-3">
-                  {[
-                    { value:"cashfree", label:"💳 Pay Online (Cashfree)", desc:"UPI, Cards, Net Banking, Wallets" },
-                    { value:"cod",      label:"💵 Cash on Delivery",      desc:"Pay when your order arrives" },
-                  ].map(({ value, label, desc }) => (
-                    <label key={value}
-                      className={`flex items-start gap-3 border rounded-lg p-3 cursor-pointer transition
-                        ${paymentMethod === value ? "border-primary bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}>
-                      <input type="radio" name="payment" value={value}
-                        checked={paymentMethod === value} onChange={() => setPaymentMethod(value)} className="mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium">{label}</p>
-                        <p className="text-xs text-gray-500">{desc}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
+          {/* Shipping Address */}
+          <form onSubmit={handleCODOrder}>
+            <h3 className="text-lg font-bold mb-4">Shipping Address</h3>
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <input type="text" name="fullName" value={shippingAddress.fullName} onChange={handleAddressChange}
+                placeholder="Full Name *" className="col-span-2 border rounded-lg px-4 py-2 focus:outline-none focus:border-primary" required />
+              <input type="tel" name="phone" value={shippingAddress.phone} onChange={handleAddressChange}
+                placeholder="Phone *" className="col-span-2 border rounded-lg px-4 py-2 focus:outline-none focus:border-primary" required />
+              <input type="text" name="addressLine1" value={shippingAddress.addressLine1} onChange={handleAddressChange}
+                placeholder="Address Line 1 *" className="col-span-2 border rounded-lg px-4 py-2 focus:outline-none focus:border-primary" required />
+              <input type="text" name="addressLine2" value={shippingAddress.addressLine2} onChange={handleAddressChange}
+                placeholder="Address Line 2" className="col-span-2 border rounded-lg px-4 py-2 focus:outline-none focus:border-primary" />
+              <input type="text" name="city" value={shippingAddress.city} onChange={handleAddressChange}
+                placeholder="City *" className="border rounded-lg px-4 py-2 focus:outline-none focus:border-primary" required />
+              <input type="text" name="state" value={shippingAddress.state} onChange={handleAddressChange}
+                placeholder="State *" className="border rounded-lg px-4 py-2 focus:outline-none focus:border-primary" required />
+              <input type="text" name="pincode" value={shippingAddress.pincode} onChange={handleAddressChange}
+                placeholder="Pincode *" className="col-span-2 border rounded-lg px-4 py-2 focus:outline-none focus:border-primary" required />
             </div>
 
-            {/* Right: Order Summary */}
-            <div className="bg-white rounded-xl p-6 border shadow-sm h-fit">
-              <h2 className="font-bold text-gray-800 mb-4">Order Summary</h2>
-              <div className="space-y-3 mb-4">
-                {items.map((item) => {
-                  const price = item.discountPrice > 0 ? item.discountPrice : item.price;
-                  return (
-                    <div key={item.product?._id || item.product} className="flex gap-3 text-sm">
-                      <img src={item.image || "/placeholder.png"} alt={item.name}
-                        className="w-12 h-12 object-cover rounded-lg flex-shrink-0" />
-                      <div className="flex-1">
-                        <p className="font-medium line-clamp-2 text-xs">{item.name}</p>
-                        <p className="text-gray-500 text-xs">Qty: {item.quantity}</p>
-                      </div>
-                      <p className="font-medium">₹{(price * item.quantity).toLocaleString("en-IN")}</p>
-                    </div>
-                  );
-                })}
-              </div>
-              <hr className="my-3" />
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-gray-600">Subtotal</span><span>₹{itemsPrice.toLocaleString("en-IN")}</span></div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Shipping</span>
-                  <span className={shipping === 0 ? "text-green-600" : ""}>{shipping === 0 ? "FREE" : `₹${shipping}`}</span>
-                </div>
-                <div className="flex justify-between"><span className="text-gray-600">GST (18%)</span><span>₹{tax.toLocaleString("en-IN")}</span></div>
-                <hr />
-                <div className="flex justify-between font-bold text-base">
-                  <span>Total</span>
-                  <span className="text-primary">₹{total.toLocaleString("en-IN")}</span>
-                </div>
-              </div>
-              <button type="submit" disabled={loading}
-                className="mt-6 w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition disabled:opacity-60 flex items-center justify-center gap-2">
-                {loading
-                  ? <><span className="animate-spin">⟳</span> Processing...</>
-                  : paymentMethod === "cashfree"
-                    ? `Pay ₹${total.toLocaleString("en-IN")}`
-                    : "Place Order"}
+            {/* Payment Method */}
+            <h3 className="text-lg font-bold mb-4">Payment Method</h3>
+            <div className="space-y-3 mb-6">
+              <label className="flex items-center border rounded-lg p-3 cursor-pointer hover:bg-gray-50">
+                <input type="radio" name="payment" value="online" checked={paymentMethod === "online"} onChange={() => setPaymentMethod("online")} className="w-4 h-4" />
+                <span className="ml-3 font-medium">Pay Online (Cashfree)</span>
+              </label>
+              <label className="flex items-center border rounded-lg p-3 cursor-pointer hover:bg-gray-50">
+                <input type="radio" name="payment" value="cod" checked={paymentMethod === "cod"} onChange={() => setPaymentMethod("cod")} className="w-4 h-4" />
+                <span className="ml-3 font-medium">Cash on Delivery</span>
+              </label>
+            </div>
+
+            {paymentMethod === "online" ? (
+              <button type="button" onClick={handlePayment} disabled={paymentLoading}
+                className="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition disabled:opacity-60">
+                {paymentLoading ? "Processing..." : `Pay ₹${total.toFixed(2)}`}
               </button>
+            ) : (
+              <button type="submit" disabled={loading}
+                className="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition disabled:opacity-60">
+                {loading ? "Placing Order..." : "Place Order"}
+              </button>
+            )}
+          </form>
+        </div>
+
+        {/* Order Summary */}
+        <div className="bg-white rounded-2xl p-6 shadow h-fit">
+          <h3 className="text-lg font-bold mb-4">Order Summary</h3>
+          <div className="space-y-3 border-b pb-4 mb-4">
+            {cart.items.map((item) => (
+              <div key={item.product._id} className="flex justify-between text-sm">
+                <span>{item.product.name} x{item.quantity}</span>
+                <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between"><span>Subtotal</span><span>₹{itemsPrice.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span>Shipping</span><span>₹{shipping.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span>Tax (18%)</span><span>₹{tax.toFixed(2)}</span></div>
+            <div className="flex justify-between font-bold text-lg border-t pt-2">
+              <span>Total</span>
+              <span className="text-primary">₹{total.toFixed(2)}</span>
             </div>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
