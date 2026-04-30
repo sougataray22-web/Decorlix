@@ -3,7 +3,6 @@ const asyncHandler = require("express-async-handler");
 const Order = require("../models/orderModel");
 const Transaction = require("../models/transactionModel");
 const axios = require("axios");
-const crypto = require("crypto");
 
 const CASHFREE_URL = process.env.CASHFREE_ENV === "TEST"
   ? "https://sandbox.cashfree.com/pg"
@@ -14,14 +13,20 @@ const initiatePayment = asyncHandler(async (req, res) => {
 
   console.log("Payment Initiate Request:", { orderId, amount, customerEmail, customerPhone });
 
-  if (!orderId || !amount || !customerEmail || !customerPhone) {
+  if (!orderId || !amount) {
     res.status(400);
-    throw new Error("Missing required fields: orderId, amount, customerEmail, customerPhone.");
+    throw new Error("orderId and amount are required.");
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    res.status(404);
+    throw new Error("Order not found.");
   }
 
   if (parseFloat(amount) < 1) {
     res.status(400);
-    throw new Error("Amount must be at least ₹1.");
+    throw new Error("Invalid amount.");
   }
 
   try {
@@ -31,8 +36,8 @@ const initiatePayment = asyncHandler(async (req, res) => {
       order_currency: "INR",
       customer_details: {
         customer_id: req.user._id.toString(),
-        customer_email: customerEmail.trim(),
-        customer_phone: customerPhone.toString(),
+        customer_email: customerEmail || order.customerEmail || "customer@decorlix.com",
+        customer_phone: customerPhone || order.phone || "9999999999",
       },
       order_meta: {
         return_url: returnUrl || `${process.env.FRONTEND_URL}/payment/verify`,
@@ -58,10 +63,10 @@ const initiatePayment = asyncHandler(async (req, res) => {
       throw new Error("Invalid response from Cashfree.");
     }
 
-    const { order_id, payment_session_id } = response.data;
+    const { payment_session_id } = response.data;
 
     await Transaction.create({
-      orderId: order_id,
+      orderId: orderId.toString(),
       userId: req.user._id,
       amount: parseFloat(amount),
       status: "pending",
@@ -72,7 +77,7 @@ const initiatePayment = asyncHandler(async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Payment session created.",
-      orderId: order_id,
+      orderId: orderId.toString(),
       paymentSessionId: payment_session_id,
       redirectUrl: `${CASHFREE_URL}/checkout/?sessionId=${payment_session_id}`,
     });
