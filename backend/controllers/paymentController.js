@@ -170,4 +170,4 @@ const getTransaction = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, transaction });
 });
 
-module.exports = { initiatePayment, verifyPayment, getTransaction };
+module.exports = { initiatePayment, verifyPayment, getTransaction, webhookHandler };
